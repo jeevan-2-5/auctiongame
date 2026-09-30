@@ -6,7 +6,7 @@ import { RoomSettings } from '../types/auction';
 interface CreateRoomModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (hostName: string, selectedTeamId: string, settings: Partial<RoomSettings>) => void;
+  onSubmit: (hostName: string, selectedTeamId: string, settings: Partial<RoomSettings>) => Promise<void> | void;
   defaultHostName: string;
 }
 
@@ -24,10 +24,11 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   const [auctionMode, setAuctionMode] = useState<'MEGA' | 'QUICK' | 'FULL'>('MEGA');
   const [isPublic, setIsPublic] = useState(true);
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!hostName.trim()) {
       setError('Please enter your name.');
@@ -38,16 +39,24 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
       return;
     }
 
-    onSubmit(hostName.trim(), selectedTeamId, {
-      startingPurseLakhs: startingPurseCr * 100,
-      maxSquadSize: 15, // STRICT 15
-      timerDurationSeconds: timerSeconds,
-      bidResetDurationSeconds: bidResetSeconds,
-      auctionMode,
-      isPublic,
-      maxOverseasInSquad: 8,
-      maxOverseasInPlayingXI: 4,
-    });
+    try {
+      setIsSubmitting(true);
+      setError('');
+      await onSubmit(hostName.trim(), selectedTeamId, {
+        startingPurseLakhs: startingPurseCr * 100,
+        maxSquadSize: 15, // STRICT 15
+        timerDurationSeconds: timerSeconds,
+        bidResetDurationSeconds: bidResetSeconds,
+        auctionMode,
+        isPublic,
+        maxOverseasInSquad: 8,
+        maxOverseasInPlayingXI: 4,
+      });
+    } catch (err: any) {
+      setError(err.message || 'Failed to create arena. Please check connection and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -228,17 +237,28 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl text-slate-400 hover:text-white text-sm transition-colors"
+              className="px-5 py-2.5 rounded-xl text-slate-400 hover:text-white text-sm transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2"
+              disabled={isSubmitting}
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>Create Arena</span>
+              {isSubmitting ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                  <span>Creating Arena...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>Create Arena</span>
+                </>
+              )}
             </button>
           </div>
         </form>

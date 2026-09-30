@@ -154,12 +154,22 @@ app.get('/api/players', (req, res) => {
 });
 
 app.post('/api/rooms', (req, res) => {
-  const { hostName, hostSessionId, settings, selectedTeamId } = req.body;
-  if (!hostSessionId) {
-    return res.status(400).json({ error: 'Session ID is required.' });
+  try {
+    let { hostName, hostSessionId, settings, selectedTeamId } = req.body || {};
+    if (!hostSessionId) {
+      hostSessionId = 'usr-' + Math.random().toString(36).substring(2, 9);
+    }
+    const room = auctionManager.createRoom(
+      hostName || 'Host Owner',
+      hostSessionId,
+      settings,
+      selectedTeamId || 'RCB'
+    );
+    res.json({ success: true, room });
+  } catch (err: any) {
+    console.error('Error in POST /api/rooms:', err);
+    res.status(500).json({ error: err.message || 'Failed to create room' });
   }
-  const room = auctionManager.createRoom(hostName, hostSessionId, settings, selectedTeamId);
-  res.json({ room });
 });
 
 app.get('/api/rooms', (req, res) => {

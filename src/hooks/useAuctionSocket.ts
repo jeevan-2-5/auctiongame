@@ -168,8 +168,53 @@ export function useAuctionSocket({ roomId, sessionId, playerName }: UseAuctionSo
     }
   }, [roomId, sessionId]);
 
+  // REST initial load & fallback polling if WS is down
+  useEffect(() => {
+    if (!roomId) {
+      setRoom(null);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchRoom = () => {
+      fetch(`/api/rooms/${roomId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (isMounted && data?.room) {
+            setRoom((prev) => {
+              // Only overwrite if no previous state or status changed
+              if (!prev || prev.updatedAt < data.room.updatedAt) {
+                return data.room;
+              }
+              return prev;
+            });
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchRoom();
+
+    // If socket is disconnected, poll every 2s
+    const pollInterval = setInterval(() => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        fetchRoom();
+      }
+    }, 2000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
+    };
+  }, [roomId]);
+
+  const setRoomDirectly = useCallback((newRoom: Room) => {
+    setRoom(newRoom);
+  }, []);
+
   return {
     room,
+    setRoomDirectly,
     isConnected,
     errorMsg,
     placeBid,

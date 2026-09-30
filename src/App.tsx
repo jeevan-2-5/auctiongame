@@ -17,8 +17,104 @@ import { PlayingXIBuilder } from './components/PlayingXIBuilder';
 import { AnalysisView } from './components/AnalysisView';
 import { useAuctionSocket } from './hooks/useAuctionSocket';
 import { getPlayerSession, savePlayerName, saveLastRoom, getLastRoom } from './utils/session';
-import { RoomSettings, Squad } from './types/auction';
+import { Room, RoomSettings, Squad, Player, RoomPlayer, AuctionState } from './types/auction';
+import { PLAYERS_DATABASE } from './data/players';
+import { TEAMS_BY_ID } from './data/teams';
 import { setServerAppUrl } from './utils/shareUrl';
+
+function createLocalRoom(
+  hostName: string,
+  hostSessionId: string,
+  selectedTeamId: string,
+  settingsPartial?: Partial<RoomSettings>
+): Room {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let id = '';
+  for (let i = 0; i < 6; i++) {
+    id += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+
+  const settings: RoomSettings = {
+    startingPurseLakhs: 12000,
+    maxSquadSize: 15,
+    timerDurationSeconds: 10,
+    bidResetDurationSeconds: 5,
+    maxOverseasInSquad: 8,
+    maxOverseasInPlayingXI: 4,
+    isPublic: true,
+    spectatorMode: true,
+    auctionMode: 'MEGA',
+    reauctionUnsold: true,
+    autoProgressSeconds: 3,
+    ...settingsPartial,
+  };
+
+  let pool: Player[] = [...PLAYERS_DATABASE];
+  if (settings.auctionMode === 'QUICK') {
+    pool = pool.slice(0, 25);
+  }
+
+  const hostPlayer: RoomPlayer = {
+    id: hostSessionId,
+    name: hostName || 'Host Owner',
+    teamId: selectedTeamId || 'RCB',
+    isHost: true,
+    isSpectator: false,
+    isConnected: true,
+    joinedAt: Date.now(),
+  };
+
+  const initialSquads: Record<string, Squad> = {};
+  if (selectedTeamId && TEAMS_BY_ID[selectedTeamId]) {
+    initialSquads[selectedTeamId] = {
+      teamId: selectedTeamId,
+      ownerId: hostSessionId,
+      ownerName: hostPlayer.name,
+      startingPurseLakhs: settings.startingPurseLakhs,
+      currentPurseLakhs: settings.startingPurseLakhs,
+      spentPurseLakhs: 0,
+      players: [],
+    };
+  }
+
+  const auctionState: AuctionState = {
+    status: 'WAITING',
+    currentPoolIndex: -1,
+    currentPlayerId: null,
+    currentBidLakhs: 0,
+    highestBidderTeamId: null,
+    highestBidderPlayerId: null,
+    timerSeconds: settings.timerDurationSeconds,
+    isTimerRunning: false,
+    lastBidTimestamp: Date.now(),
+    soldPlayerIds: [],
+    unsoldPlayerIds: [],
+  };
+
+  return {
+    id,
+    name: `${hostPlayer.name}'s Mega Auction`,
+    hostId: hostSessionId,
+    settings,
+    players: { [hostSessionId]: hostPlayer },
+    squads: initialSquads,
+    playingXIs: {},
+    analyses: {},
+    auction: auctionState,
+    events: [
+      {
+        id: `ev-${Date.now()}-1`,
+        roomId: id,
+        timestamp: Date.now(),
+        type: 'ROOM_CREATED',
+        message: `Room created by ${hostPlayer.name} with ₹${(settings.startingPurseLakhs / 100).toFixed(0)} Cr starting purse.`,
+      },
+    ],
+    playerPool: pool,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+}
 
 export default function App() {
   const [session, setSession] = useState<{ sessionId: string; name: string }>(getPlayerSession());
@@ -35,6 +131,7 @@ export default function App() {
   // Socket connection to active room
   const {
     room,
+    setRoomDirectly,
     isConnected,
     errorMsg,
     placeBid,
@@ -94,6 +191,8 @@ export default function App() {
     savePlayerName(hostName);
     setSession((prev) => ({ ...prev, name: hostName }));
 
+    let createdRoom: Room | null = null;
+
     try {
       const res = await fetch('/api/rooms', {
         method: 'POST',
@@ -105,19 +204,31 @@ export default function App() {
           settings,
         }),
       });
-      const data = await res.json();
-      if (data.room) {
-        setActiveRoomId(data.room.id);
-        saveLastRoom(data.room.id);
-        setIsCreateModalOpen(false);
-        setCurrentView('room');
-        // Update URL without reload
-        const newUrl = `${window.location.pathname}?room=${data.room.id}`;
-        window.history.pushState({ path: newUrl }, '', newUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.room) {
+          createdRoom = data.room;
+        }
       }
     } catch (e) {
-      console.error('Failed to create room', e);
+      console.warn('Backend /api/rooms failed, using instant client room fallback:', e);
     }
+
+    // Reliable fallback so creation NEVER fails even on static hosting or offline network
+    if (!createdRoom) {
+      createdRoom = createLocalRoom(hostName, session.sessionId, selectedTeamId, settings);
+    }
+
+    setRoomDirectly(createdRoom);
+    setActiveRoomId(createdRoom.id);
+    saveLastRoom(createdRoom.id);
+    setIsCreateModalOpen(false);
+    setCurrentView('room');
+
+    try {
+      const newUrl = `${window.location.pathname}?room=${createdRoom.id}`;
+      window.history.pushState({ path: newUrl }, '', newUrl);
+    } catch (e) {}
   };
 
   const handleJoinRoomSubmit = async (
@@ -142,15 +253,22 @@ export default function App() {
       });
       const data = await res.json();
       if (data.room) {
+        setRoomDirectly(data.room);
         setActiveRoomId(data.room.id);
         saveLastRoom(data.room.id);
         setIsJoinModalOpen(false);
         setCurrentView('room');
         const newUrl = `${window.location.pathname}?room=${data.room.id}`;
         window.history.pushState({ path: newUrl }, '', newUrl);
+      } else if (data.error) {
+        alert(data.error);
       }
     } catch (e) {
       console.error('Failed to join room', e);
+      // Fallback: still navigate to room so socket can attempt connecting
+      setActiveRoomId(roomCode);
+      setIsJoinModalOpen(false);
+      setCurrentView('room');
     }
   };
 
@@ -229,6 +347,25 @@ export default function App() {
         )}
 
         {/* View 4: Active Room View */}
+        {currentView === 'room' && !room && (
+          <div className="max-w-md mx-auto my-24 p-8 rounded-3xl bg-slate-900 border border-slate-800 text-center shadow-2xl">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto mb-4 animate-spin text-2xl">
+              🏏
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2">Connecting to Arena {activeRoomId || ''}...</h3>
+            <p className="text-xs text-slate-400 mb-6">Setting up auction floor and syncing squad rosters.</p>
+            <button
+              onClick={() => {
+                setActiveRoomId(null);
+                setCurrentView('home');
+              }}
+              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+            >
+              Return to Lobby
+            </button>
+          </div>
+        )}
+
         {currentView === 'room' && room && (
           <>
             {/* Stage A: Waiting in Lobby */}
