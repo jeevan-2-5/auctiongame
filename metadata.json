@@ -1,0 +1,6 @@
+{
+  "name": "Cricket Auction Arena",
+  "description": "Multiplayer real-time cricket auction arena where friends draft up to 15 players, pick their Playing XI, and receive deterministic & AI-powered team analysis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
