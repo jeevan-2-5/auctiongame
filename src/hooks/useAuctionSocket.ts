@@ -102,70 +102,137 @@ export function useAuctionSocket({ roomId, sessionId, playerName }: UseAuctionSo
   }, [connect]);
 
   // Actions
-  const placeBid = useCallback((amountLakhs: number) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomId) {
+  const placeBid = useCallback(async (amountLakhs: number) => {
+    if (!roomId) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'BID', roomId, sessionId, amountLakhs }));
     }
+    try {
+      await fetch(`/api/rooms/${roomId}/bid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerSessionId: sessionId, amountLakhs }),
+      });
+    } catch (e) {}
   }, [roomId, sessionId]);
 
-  const selectTeam = useCallback((teamId: string, customName?: string) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomId) {
-      wsRef.current.send(JSON.stringify({ type: 'SELECT_TEAM', roomId, sessionId, teamId, playerName: customName || playerName }));
+  const selectTeam = useCallback(async (teamId: string, customName?: string) => {
+    if (!roomId) return;
+    const name = customName || playerName;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'SELECT_TEAM', roomId, sessionId, teamId, playerName: name }));
     }
+    try {
+      await fetch(`/api/rooms/${roomId}/select-team`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerSessionId: sessionId, teamId, playerName: name }),
+      });
+    } catch (e) {}
   }, [roomId, sessionId, playerName]);
 
-  const startAuction = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomId) {
+  const startAuction = useCallback(async () => {
+    if (!roomId) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'START_AUCTION', roomId, sessionId }));
+    }
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hostSessionId: sessionId }),
+      });
+      const data = await res.json();
+      if (data?.room) {
+        setRoom(data.room);
+      } else if (!res.ok && data?.error) {
+        setErrorMsg(data.error);
+        alert(data.error);
+      }
+    } catch (e) {
+      console.warn('Start auction failed via REST:', e);
     }
   }, [roomId, sessionId]);
 
-  const pauseAuction = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomId) {
+  const pauseAuction = useCallback(async () => {
+    if (!roomId) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'PAUSE_AUCTION', roomId, sessionId }));
     }
   }, [roomId, sessionId]);
 
-  const resumeAuction = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomId) {
+  const resumeAuction = useCallback(async () => {
+    if (!roomId) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'RESUME_AUCTION', roomId, sessionId }));
     }
   }, [roomId, sessionId]);
 
-  const skipPlayer = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomId) {
+  const skipPlayer = useCallback(async () => {
+    if (!roomId) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'SKIP_PLAYER', roomId, sessionId }));
     }
   }, [roomId, sessionId]);
 
-  const endAuction = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomId) {
+  const endAuction = useCallback(async () => {
+    if (!roomId) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'END_AUCTION', roomId, sessionId }));
     }
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/end`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hostSessionId: sessionId }),
+      });
+      const data = await res.json();
+      if (data?.room) setRoom(data.room);
+    } catch (e) {}
   }, [roomId, sessionId]);
 
-  const submitPlayingXI = useCallback((playingXI: {
+  const submitPlayingXI = useCallback(async (playingXI: {
     teamId: string;
     playerIds: string[];
     battingOrder: string[];
     captainId: string;
     viceCaptainId: string;
   }) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomId) {
+    if (!roomId) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'SUBMIT_PLAYING_XI', roomId, sessionId, playingXI }));
     }
+    try {
+      await fetch(`/api/rooms/${roomId}/playing-xi`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerSessionId: sessionId, playingXI }),
+      });
+    } catch (e) {}
   }, [roomId, sessionId]);
 
-  const triggerAnalysis = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomId) {
+  const triggerAnalysis = useCallback(async () => {
+    if (!roomId) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'TRIGGER_ANALYSIS', roomId, sessionId }));
     }
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/analyze`, { method: 'POST' });
+      const data = await res.json();
+      if (data?.room) setRoom(data.room);
+    } catch (e) {}
   }, [roomId, sessionId]);
 
-  const returnToPlayingXI = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && roomId) {
+  const returnToPlayingXI = useCallback(async () => {
+    if (!roomId) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'RETURN_TO_PLAYING_XI', roomId, sessionId }));
     }
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/edit-xi`, { method: 'POST' });
+      const data = await res.json();
+      if (data?.room) setRoom(data.room);
+    } catch (e) {}
   }, [roomId, sessionId]);
 
   // REST initial load & fallback polling if WS is down

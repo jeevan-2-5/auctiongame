@@ -172,7 +172,7 @@ export default function App() {
       setJoinModalCode(code);
       setCurrentView('room');
 
-      // Fetch room immediately via REST so we don't wait for socket!
+      // Fetch host's room immediately from server
       fetch(`/api/rooms/${code}`)
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
@@ -184,23 +184,12 @@ export default function App() {
     }
   }, []);
 
-  // Failsafe: If room is still loading after 2.5s, auto-initialize client room with that exact code
-  useEffect(() => {
-    if (currentView === 'room' && activeRoomId && !room) {
-      const timer = setTimeout(() => {
-        const fallback = createLocalRoom(session.name || 'Player', session.sessionId, 'CSK', {}, activeRoomId);
-        setRoomDirectly(fallback);
-      }, 2500);
-      return () => clearTimeout(timer);
-    }
-  }, [currentView, activeRoomId, room, session.name, session.sessionId, setRoomDirectly]);
-
   // When room state loads, if player is new to room and has no team, prompt them to join!
   useEffect(() => {
     if (room && activeRoomId) {
       const myPlayer = room.players[session.sessionId];
       if (!myPlayer || (!myPlayer.teamId && !myPlayer.isSpectator)) {
-        // If not already set, prompt join modal pre-filled
+        // Prompt join modal pre-filled so friend picks their franchise
         setJoinModalCode(room.id);
         setIsJoinModalOpen(true);
       }
@@ -382,13 +371,17 @@ export default function App() {
               <button
                 onClick={() => {
                   if (activeRoomId) {
-                    const fallback = createLocalRoom(session.name || 'Friend', session.sessionId, 'CSK', {}, activeRoomId);
-                    setRoomDirectly(fallback);
+                    fetch(`/api/rooms/${activeRoomId}`)
+                      .then((res) => res.json())
+                      .then((data) => {
+                        if (data?.room) setRoomDirectly(data.room);
+                      })
+                      .catch(() => {});
                   }
                 }}
                 className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-lg shadow-amber-500/20 transition-colors"
               >
-                Enter Arena Now
+                Retry Connect
               </button>
               <button
                 onClick={() => {

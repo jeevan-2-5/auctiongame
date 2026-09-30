@@ -41,6 +41,9 @@ describe('Cricket Auction Arena Engine Tests', () => {
     const room = manager.createRoom('Host Alice', 'sess-host-1', {}, 'RCB');
     const squad = room.squads['RCB'];
 
+    // Start auction first
+    manager.startAuction(room.id, 'sess-host-1');
+
     // Fill squad with 15 players
     for (let i = 0; i < 15; i++) {
       squad.players.push({
@@ -50,9 +53,6 @@ describe('Cricket Auction Arena Engine Tests', () => {
       });
     }
     assert.strictEqual(squad.players.length, 15);
-
-    // Start auction
-    manager.startAuction(room.id, 'sess-host-1');
 
     // Attempt bid with 15 players already in squad
     const bidResult = manager.placeBid(room.id, 'sess-host-1', 500);

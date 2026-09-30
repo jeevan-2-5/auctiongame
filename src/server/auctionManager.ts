@@ -361,9 +361,26 @@ export class AuctionManager {
   }
 
   public startAuction(roomId: string, hostSessionId: string): { success: boolean; error?: string } {
-    const room = this.rooms.get(roomId);
+    const cleanRoomId = roomId ? roomId.toUpperCase().trim() : '';
+    const room = this.rooms.get(cleanRoomId);
     if (!room) return { success: false, error: 'Room not found.' };
-    if (room.hostId !== hostSessionId) return { success: false, error: 'Only the host can start the auction.' };
+
+    const caller = room.players[hostSessionId];
+    const isOwner =
+      room.hostId === hostSessionId ||
+      caller?.isHost ||
+      Object.keys(room.squads).length === 1 ||
+      Object.keys(room.players).length <= 1;
+
+    if (!isOwner) {
+      const origHost = room.players[room.hostId];
+      if (!origHost || !origHost.isConnected) {
+        room.hostId = hostSessionId;
+        if (caller) caller.isHost = true;
+      } else {
+        return { success: false, error: 'Only the host can start the auction.' };
+      }
+    }
 
     const teamsCount = Object.keys(room.squads).length;
     if (teamsCount < 1) {
@@ -376,7 +393,7 @@ export class AuctionManager {
 
     const startEvent: AuctionEvent = {
       id: `ev-${Date.now()}`,
-      roomId,
+      roomId: cleanRoomId,
       timestamp: Date.now(),
       type: 'AUCTION_STARTED',
       message: `The live auction has officially started with ${teamsCount} franchises competing!`,
@@ -384,6 +401,7 @@ export class AuctionManager {
     room.events.unshift(startEvent);
 
     this.presentNextPlayer(room);
+    this.broadcast(cleanRoomId, startEvent);
     return { success: true };
   }
 

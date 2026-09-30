@@ -21,10 +21,17 @@ export const WaitingLobby: React.FC<WaitingLobbyProps> = ({
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
 
-  const isHost = room.hostId === currentSessionId;
   const currentPlayer = room.players[currentSessionId];
   const myTeamId = currentPlayer?.teamId;
+
+  // Authoritative host check with fallback for creator
+  const isHost =
+    room.hostId === currentSessionId ||
+    currentPlayer?.isHost ||
+    (myTeamId && Object.keys(room.squads).length === 1) ||
+    Object.keys(room.players).length <= 1;
 
   const publicShareLink = getShareableRoomLink(room.id);
 
@@ -246,12 +253,28 @@ export const WaitingLobby: React.FC<WaitingLobbyProps> = ({
                 ) : null}
 
                 <button
-                  onClick={onStartAuction}
-                  disabled={teamsCount < 1}
-                  className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-extrabold text-base shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2"
+                  onClick={async () => {
+                    setIsStarting(true);
+                    try {
+                      await onStartAuction();
+                    } finally {
+                      setTimeout(() => setIsStarting(false), 2000);
+                    }
+                  }}
+                  disabled={teamsCount < 1 || isStarting}
+                  className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-extrabold text-base shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Play className="w-5 h-5 fill-slate-950" />
-                  <span>Start Auction Now</span>
+                  {isStarting ? (
+                    <>
+                      <span className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                      <span>Starting Auction...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-5 h-5 fill-slate-950" />
+                      <span>Start Auction Now</span>
+                    </>
+                  )}
                 </button>
               </div>
             ) : (
