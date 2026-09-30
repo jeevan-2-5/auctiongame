@@ -26,12 +26,15 @@ function createLocalRoom(
   hostName: string,
   hostSessionId: string,
   selectedTeamId: string,
-  settingsPartial?: Partial<RoomSettings>
+  settingsPartial?: Partial<RoomSettings>,
+  customRoomId?: string
 ): Room {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let id = '';
-  for (let i = 0; i < 6; i++) {
-    id += chars.charAt(Math.floor(Math.random() * chars.length));
+  let id = customRoomId ? customRoomId.toUpperCase().trim() : '';
+  if (!id) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    for (let i = 0; i < 6; i++) {
+      id += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
   }
 
   const settings: RoomSettings = {
@@ -164,12 +167,33 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
     if (roomParam) {
-      const code = roomParam.toUpperCase();
+      const code = roomParam.toUpperCase().trim();
       setActiveRoomId(code);
       setJoinModalCode(code);
       setCurrentView('room');
+
+      // Fetch room immediately via REST so we don't wait for socket!
+      fetch(`/api/rooms/${code}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.room) {
+            setRoomDirectly(data.room);
+          }
+        })
+        .catch(() => {});
     }
   }, []);
+
+  // Failsafe: If room is still loading after 2.5s, auto-initialize client room with that exact code
+  useEffect(() => {
+    if (currentView === 'room' && activeRoomId && !room) {
+      const timer = setTimeout(() => {
+        const fallback = createLocalRoom(session.name || 'Player', session.sessionId, 'CSK', {}, activeRoomId);
+        setRoomDirectly(fallback);
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [currentView, activeRoomId, room, session.name, session.sessionId, setRoomDirectly]);
 
   // When room state loads, if player is new to room and has no team, prompt them to join!
   useEffect(() => {
@@ -354,15 +378,28 @@ export default function App() {
             </div>
             <h3 className="text-lg font-bold text-white mb-2">Connecting to Arena {activeRoomId || ''}...</h3>
             <p className="text-xs text-slate-400 mb-6">Setting up auction floor and syncing squad rosters.</p>
-            <button
-              onClick={() => {
-                setActiveRoomId(null);
-                setCurrentView('home');
-              }}
-              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
-            >
-              Return to Lobby
-            </button>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => {
+                  if (activeRoomId) {
+                    const fallback = createLocalRoom(session.name || 'Friend', session.sessionId, 'CSK', {}, activeRoomId);
+                    setRoomDirectly(fallback);
+                  }
+                }}
+                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-lg shadow-amber-500/20 transition-colors"
+              >
+                Enter Arena Now
+              </button>
+              <button
+                onClick={() => {
+                  setActiveRoomId(null);
+                  setCurrentView('home');
+                }}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+              >
+                Return to Lobby
+              </button>
+            </div>
           </div>
         )}
 

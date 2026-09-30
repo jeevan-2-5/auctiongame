@@ -20,6 +20,17 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Enable CORS for all incoming requests (useful for hosted domains & proxies)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Store active socket connections mapped by roomId
 interface ClientInfo {
   ws: WebSocket;
@@ -38,32 +49,35 @@ wss.on('connection', (ws: WebSocket) => {
       const { type, roomId, sessionId } = data;
 
       if (type === 'SUBSCRIBE' && roomId) {
-        client.roomId = roomId;
+        const cleanRoomId = roomId.toUpperCase().trim();
+        client.roomId = cleanRoomId;
         client.sessionId = sessionId;
+
+        // Auto-ensure room exists (creates on-demand so friends are never stuck on "Connecting...")
+        const room = auctionManager.getOrCreateRoom(cleanRoomId, sessionId, data.playerName);
 
         // Auto-ensure player is registered in room
         if (sessionId) {
-          auctionManager.ensurePlayerInRoom(roomId, sessionId, data.playerName);
+          auctionManager.ensurePlayerInRoom(cleanRoomId, sessionId, data.playerName);
         }
 
         // Register room broadcast callback if not registered
-        auctionManager.registerBroadcast(roomId, (updatedRoom, event) => {
+        auctionManager.registerBroadcast(cleanRoomId, (updatedRoom, event) => {
           const payload = JSON.stringify({
             type: 'ROOM_UPDATE',
             room: updatedRoom,
             event,
           });
           for (const c of clients) {
-            if (c.roomId === roomId && c.ws.readyState === WebSocket.OPEN) {
+            if (c.roomId === cleanRoomId && c.ws.readyState === WebSocket.OPEN) {
               c.ws.send(payload);
             }
           }
         });
 
-        const room = auctionManager.getRoom(roomId);
-        if (room) {
-          ws.send(JSON.stringify({ type: 'ROOM_STATE', room }));
-        }
+        // Always send fresh room state immediately to subscriber
+        const currentRoom = auctionManager.getRoom(cleanRoomId) || room;
+        ws.send(JSON.stringify({ type: 'ROOM_STATE', room: currentRoom }));
       } else if (type === 'BID' && roomId && sessionId) {
         const result = auctionManager.placeBid(roomId, sessionId, data.amountLakhs);
         if (!result.success) {
@@ -178,17 +192,17 @@ app.get('/api/rooms', (req, res) => {
 });
 
 app.get('/api/rooms/:id', (req, res) => {
-  const room = auctionManager.getRoom(req.params.id.toUpperCase());
-  if (!room) {
-    return res.status(404).json({ error: 'Room not found.' });
-  }
-  res.json({ room });
+  const roomId = req.params.id ? req.params.id.toUpperCase().trim() : '';
+  const room = auctionManager.getOrCreateRoom(roomId);
+  res.json({ success: true, room });
 });
 
 app.post('/api/rooms/:id/join', (req, res) => {
+  const roomId = req.params.id ? req.params.id.toUpperCase().trim() : '';
+  auctionManager.getOrCreateRoom(roomId);
   const { playerSessionId, playerName, teamId, isSpectator } = req.body;
   const result = auctionManager.joinRoom(
-    req.params.id.toUpperCase(),
+    roomId,
     playerSessionId,
     playerName,
     teamId,
@@ -197,7 +211,7 @@ app.post('/api/rooms/:id/join', (req, res) => {
   if (!result.success) {
     return res.status(400).json({ error: result.error });
   }
-  res.json({ room: result.room });
+  res.json({ success: true, room: result.room });
 });
 
 app.post('/api/rooms/:id/select-team', (req, res) => {

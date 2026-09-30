@@ -182,8 +182,8 @@ export function useAuctionSocket({ roomId, sessionId, playerName }: UseAuctionSo
         .then((data) => {
           if (isMounted && data?.room) {
             setRoom((prev) => {
-              // Only overwrite if no previous state or status changed
-              if (!prev || prev.updatedAt < data.room.updatedAt) {
+              // Only overwrite if no previous state or status changed / updated
+              if (!prev || prev.updatedAt <= data.room.updatedAt) {
                 return data.room;
               }
               return prev;

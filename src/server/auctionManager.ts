@@ -54,9 +54,10 @@ export class AuctionManager {
     hostName: string,
     hostSessionId: string,
     settingsPartial?: Partial<RoomSettings>,
-    selectedTeamId?: string
+    selectedTeamId?: string,
+    customRoomId?: string
   ): Room {
-    const id = this.generateRoomCode();
+    const id = customRoomId ? customRoomId.toUpperCase().trim() : this.generateRoomCode();
     const settings: RoomSettings = {
       startingPurseLakhs: 12000, // 120 Cr
       maxSquadSize: 15, // STRICT 15 Players max
@@ -145,7 +146,27 @@ export class AuctionManager {
   }
 
   public getRoom(id: string): Room | undefined {
-    return this.rooms.get(id);
+    if (!id) return undefined;
+    return this.rooms.get(id.toUpperCase().trim());
+  }
+
+  public getOrCreateRoom(
+    id: string,
+    defaultHostSessionId?: string,
+    defaultHostName?: string
+  ): Room {
+    const code = id ? id.toUpperCase().trim() : this.generateRoomCode();
+    let existing = this.rooms.get(code);
+    if (!existing) {
+      existing = this.createRoom(
+        defaultHostName || 'Auction Host',
+        defaultHostSessionId || 'usr-' + Math.random().toString(36).substring(2, 9),
+        { startingPurseLakhs: 12000, maxSquadSize: 15 },
+        'RCB',
+        code
+      );
+    }
+    return existing;
   }
 
   public getAllPublicRooms(): Array<{
